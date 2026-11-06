@@ -217,6 +217,32 @@ public final class Dipo {
         }
     }
 
+    /**
+     * The CarPlay library's disableBluetooth (onDisableBluetooth, about 80 ms after a session
+     * starts) makes DiPO disconnect the phone's Bluetooth, as it should for wired CarPlay. On
+     * a wireless session that also closes the bridge's iAP2 link (SPP), and the phone's iAP2
+     * over the CarPlay channel then arrives without data on some phones (US Ioniq 5, iOS 27):
+     * the session ends after about a minute. Skipped while wireless CarPlay is up, so iAP2
+     * stays on Bluetooth. Not a hook point yet (CarPlayService's own name, the same class as
+     * dipo.carplay). persist.ev6.cpwl.keepbt=0 turns it off.
+     */
+    private static void keepBluetooth(ClassLoader cl) {
+        try {
+            Class<?> c = Class.forName("com.daudio.app.dipo.telechips.CarPlayService", false, cl);
+            hmgapi.hook.Bridge.hookMethod(c.getDeclaredMethod("onDisableBluetooth", String.class), new MethodHook() {
+                @Override
+                protected void beforeHookedMethod(Param p) {
+                    if (!Bridge.sCpWireless || "0".equals(Bridge.prop("persist.ev6.cpwl.keepbt", "1"))) return;
+                    log("DiPO: kept Bluetooth up for wireless CarPlay (disableBluetooth skipped)");
+                    p.setResult(null);
+                }
+            });
+            log("DiPO: Bluetooth kept up during wireless CarPlay");
+        } catch (Throwable t) {
+            error("keepBluetooth", t);
+        }
+    }
+
     private static void bridge() {
         final ClassLoader cl = app.classLoader;
         Bridge.cl = cl;
@@ -253,6 +279,7 @@ public final class Dipo {
                 Bridge.onCpIapIn(p.thisObject, (byte[]) p.args[0], (Integer) p.args[1]);
             }
         });
+        keepBluetooth(cl);
         // DiPO's own wireless CarPlay (Hyundai's) stays off: the feature file is there for the other apps
         mod.hook(cl, "dipo.utils.is_support_wireless_carplay", new MethodHook() {
             @Override
